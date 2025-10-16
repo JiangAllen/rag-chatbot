@@ -99,12 +99,12 @@ Make sure Docker is installed on your system and that the Docker service is runn
 ### 3. Build the Docker Image
 From the project root directory, run:
 ```
-docker build -t my-project .
+docker build -t your-project .
 ```
 
 ### 4. Run the Docker Container
 ```
-docker run -d -p 8000:8000 my-project
+docker run -d -p 8000:8000 your-project
 ```
 
 ### 5. Access the Application

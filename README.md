@@ -112,7 +112,7 @@ Once the container is running, open your browser and visit:
 👉 http://localhost:8000
 
 ## ⚙️ API Endpoints
-### POST /api/chat — News Text Analysis & Q&A
+### POST /api/chat — News Text Analysis & QA
 ```
 {
     "history": [
@@ -129,7 +129,7 @@ Once the container is running, open your browser and visit:
 - user: User question
 - bot: AI response
 
-### POST /api/graph — MBTI Analysis & Q&A
+### POST /api/graph — MBTI Analysis & QA
 ```
 {
     "history": [

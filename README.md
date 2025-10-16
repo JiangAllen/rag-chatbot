@@ -39,6 +39,7 @@ The backend is organized into several key modules:
 | **pipline.py** | Flask/FastAPI application containing research endpoints. |
 | **Chunking-Text-Splitting.py** | Example script for semantic text chunking. |
 | **yolo_clip_crop.py** | Small AI project utilizing **OpenCV** and **YOLO** for intelligent image cropping. |
+| **index.html** | Simple front-end interface |
 
 ---
 

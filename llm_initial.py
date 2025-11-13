@@ -57,12 +57,9 @@ class model_application():
         chat_completion.choices[0].message.content = OpenCC("s2t").convert(chat_completion.choices[0].message.content)
         return chat_completion.choices[0].message.content
 
-    def openai_stream(self, results, messages, subject, other_subject, image_dict, flag, query_text):
-        # data_info = {"data_points": results, "subject": subject, "other_subject": other_subject, "image_dict": image_dict, "flag": flag, "query_text": query_text}
-        # data_info = json.dumps(data_info)
-        # yield f"data: {data_info}\n\n"
-        # time.sleep(0.03)
-        chat_completion = self.openai_client.chat.completions.create(
+    def openai_stream(self, messages):
+        converter = OpenCC("s2t")
+        stream = self.openai_client.chat.completions.create(
             model=self.chatgpt_deployment,
             messages=messages,
             temperature=0.0,
@@ -71,21 +68,14 @@ class model_application():
             stream=True,
             n=1
         )
-        for i in chat_completion:
-            if i.choices:
-                time.sleep(0.01)
-                if i.choices[0].delta.content != None and i.choices[0].delta.content != "" and i.choices[0].delta.content != "@":
-                    response = OpenCC("s2t").convert(i.choices[0].delta.content)
-                    response = {"response": response}
-                    response = json.dumps(response)
-                    yield f"data: {response}\n\n"
-                else:
-                    pass
-        data_info = {"data_points": results, "subject": subject, "other_subject": other_subject, "image_dict": image_dict, "flag": flag, "query_text": query_text}
-        data_info = json.dumps(data_info)
-        time.sleep(0.03)
-        yield f"data: start\n\n"
-        yield f"data: {data_info}\n\n"
+        for s in stream:
+            if s.choices and s.choices[0].delta.content:
+                content = s.choices[0].delta.content
+                time.sleep(0.005)
+                if content not in ["", "@"]:
+                    response = converter.convert(content)
+                    yield f"data: {json.dumps({'response': response})}\n\n"
+        yield "data: [DONE]\n\n"
 
     def bedrock_stream(self, sysmg, query_text):
         body = {

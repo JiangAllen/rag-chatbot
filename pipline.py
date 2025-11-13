@@ -9,6 +9,7 @@ from processing import *
 from service import azure_service
 from llm_initial import model_application
 from neo import Neo4jConnection
+from fastapi.responses import StreamingResponse
 import pandas as pd
 import uvicorn
 import re
@@ -16,7 +17,7 @@ import re
 class InputData(BaseModel):
     history: List[Dict[str, Any]]
 
-def run_rag(history: Sequence[dict[str, str]]):
+def run_digitimes(history: Sequence[dict[str, str]]):
     azure = azure_service()
     history = [{**item, "user": full_to_half(item["user"]), "bot": full_to_half(item["bot"])} if "bot" in item else {**item, "user": full_to_half(item["user"])} for item in history]
 
@@ -74,8 +75,8 @@ def run_rag(history: Sequence[dict[str, str]]):
             search_result["datepublish"] = pd.to_datetime(search_result["datepublish"]).dt.strftime("%Y-%m-%d")
             search_result = search_result[~search_result["news_key"].str.contains("external|statistics")].reset_index(drop=True)
             search_result = search_result[search_result["@search.reranker_score"] >= threshold_score].reset_index(drop=True)[:8]
-            results = news_key_filter(search_result[[]].to_json(orient="records", force_ascii=False))
-            subject = generate_subject(search_result, [])
+            results = news_key_filter(search_result[["news_key", "datepublish", "subject", "keyword", "reporter", "body"]].to_json(orient="records", force_ascii=False))
+            subject = generate_subject(search_result, ["intro", "external", "trans", "statistics", "000000"])
             if any(results):
                 system_message = system_message_chat_conversation.format(injected_prompt="", follow_up_questions_prompt="", year=datetime.strftime(datetime.today(), "%Y-%m-%d"))
                 message = get_messages_for_qa("{}\n\n資料來源:\n{}".format(system_message, results), query_text)
@@ -133,6 +134,7 @@ def run_graphrag(history: Sequence[dict[str, str]]):
         # conversation += "last question: {}\n".format(history[-1]["user"])
         is_hr = history[-1]["hr"]
         user_question = history[-1]["user"]
+
         pattern = re.compile(r"情境:\s*(.*?)\s*問題:\s*(.*)", re.DOTALL)
         match = pattern.match(user_question)
         if match:
@@ -151,9 +153,7 @@ def run_graphrag(history: Sequence[dict[str, str]]):
                 neosearches = n4c.query_neo4j(four_letter=analyzed_mbti, method="mbti")
                 reference_neosearch = json.dumps([{k: " ".join(v) if isinstance(v, list) else v for k, v in ns.items()} for ns in neosearches], ensure_ascii=False)
                 print("<參考資料>\n{}".format(reference_neosearch))
-                message = get_messages_for_neo4j(system_message_hr_mbti_expert_answer_case1, situation, question, reference_neosearch)
-                llm_answer = llm.openai_chunk(message)
-                return reference_neosearch, llm_answer
+                prompt = system_message_hr_mbti_expert_answer_case1 # system_message_hr_mbti_expert_answer_case1, system_message_hr_pip_answer
             else:
                 print("<未知> MBTI 的情境\n")
                 query_embed = azure.openai_client.embeddings.create(model="text-embedding-ada-002", input=situation)
@@ -164,16 +164,19 @@ def run_graphrag(history: Sequence[dict[str, str]]):
                 neosearches = n4c.query_neo4j(four_letter=ped_personality, method="mbti")
                 reference_neosearch = json.dumps([{k: " ".join(v) if isinstance(v, list) else v for k, v in ns.items()} for ns in neosearches], ensure_ascii=False)
                 print("<參考資料>\n{}".format(reference_neosearch))
-                message = get_messages_for_neo4j(system_message_hr_mbti_expert_answer_case2, situation, question, reference_neosearch)
-                llm_answer = llm.openai_chunk(message)
-                return reference_neosearch, llm_answer
+                prompt = system_message_hr_mbti_expert_answer_case2 # system_message_hr_mbti_expert_answer_case2, system_message_hr_pip_answer
+            message = get_messages_for_neo4j(prompt, situation, question, reference_neosearch)
+            # llm_answer = llm.openai_chunk(message)
+            # return reference_neosearch, llm_answer
+            for chunk in llm.openai_stream(message):
+                yield chunk
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"], )
 
 @app.post("/chat")
 async def chatbot(input: InputData):
-    source, result = run_rag(input.history)
+    source, result = run_digitimes(input.history)
     return {"response": result, "source": source}
 
 @app.post("/crawl")
@@ -185,8 +188,20 @@ async def crawlbot(input: InputData):
 async def graphbot(input: InputData):
     # command, source, result = run_graphrag(input.history)
     # return {"neo4j command": command, "neo4j source": source, "response": result}
-    source, result = run_graphrag(input.history)
-    return {"source": source, "response": result}
+    # source, result = run_graphrag(input.history)
+    # return {"source": source, "response": result}
+    def generate():
+        for chunk in run_graphrag(input.history):
+            yield chunk
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8888)

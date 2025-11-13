@@ -19,6 +19,8 @@ def get_messages_for_qa(system_prompt: str, user_conv: str) -> list:
 def get_messages_for_neo4j(my_prompt: str, situation: str, question: str, reference: str) -> list:
     message = [{"role": "system", "content": """你是一位資深人資顧問兼 MBTI 應用專家（角色），熟悉企業人才盤點、轉調評估、績效改善、職涯規劃與團隊組建。"""}]
     message.append({"role": "user", "content": my_prompt.format(situation=situation, question=question, reference=reference)})
+    # message = [{"role": "system", "content": """你是一位具備十五年以上實務經驗的資深人資顧問（Senior HR Consultant），專精於設計兼顧「組織績效目標」與「員工心理承受度」的 **員工績效輔導計畫（Performance Improvement Plan, PIP）**。"""}]
+    # message.append({"role": "user", "content": my_prompt.format(situation=situation, reference=reference)})
     return message
 
 def get_messages_for_images(system_prompt: str, image_base64_list: List[str], companyname: str) -> list:
@@ -164,7 +166,7 @@ def mbti_to_markdown(data):
         md_output.append(article_md)
     return "\n\n".join(md_output)
 
-def get_first_and_last_day_three_months_ago(months):
+def get_first_and_last_day_three_months_ago(months): # 幾個月前 那個月的第一天 ~ 最後一天
     months_ago = datetime.now() - relativedelta(months=months)
     year = months_ago.year
     month = months_ago.month
@@ -175,7 +177,7 @@ def get_first_and_last_day_three_months_ago(months):
     del months_ago, year, month
     return first_day, last_day
 
-def get_first_and_last_day_lastweek_list():
+def get_first_and_last_day_lastweek_list(): # 上禮拜 第一天 ~ 最後一天
     year, week_num, day_of_week = date.today().isocalendar()
     lastweek_list = []
     for i in range(7):
@@ -183,7 +185,7 @@ def get_first_and_last_day_lastweek_list():
     del year, week_num, day_of_week
     return min(lastweek_list), max(lastweek_list)
 
-def get_first_and_last_day_thissweek_list():
+def get_first_and_last_day_thissweek_list(): # 本週 星期一 ~ 今天的所有日期
     year, week_num, day_of_week = date.today().isocalendar()
     thisweek_list = []
     for i in range(day_of_week):

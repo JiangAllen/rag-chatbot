@@ -1,0 +1,31 @@
+name: python310
+channels:
+  - defaults
+dependencies:
+  - python=3.10
+  - pip
+  # --- 基礎數據處理 ---
+  - numpy
+  - pandas
+  - scikit-learn
+  - scipy
+  # --- 影像處理 (給 yolo_clip_crop.py 用) ---
+  # 注意：在 Docker 裡要裝 headless 版，不然會因為找不到視窗介面報錯
+  - opencv
+  # --- 網路與爬蟲 ---
+  - requests
+  - beautifulsoup4
+  - flask
+  - scrapy
+  # --- 其他工具 ---
+  - pyyaml
+  - tqdm
+  - python-dotenv
+  - pip:
+      # --- 資料庫 (給 neo.py 用) ---
+      - neo4j
+      # --- 雲端 (如果你有連 AWS 或 Azure，請解開下面註解) ---
+      # - boto3
+      # - azure-storage-blob
+      # --- AI 模型 (如果有用到 YOLO) ---
+      # - ultralytics

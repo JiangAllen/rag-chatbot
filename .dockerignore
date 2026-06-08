@@ -1,0 +1,7 @@
+__pycache__
+.idea
+dataset
+model
+API KEY.txt
+Neo4j-7d40cd6e-Created-2025-08-13.txt
+*.md

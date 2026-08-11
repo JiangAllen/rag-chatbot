@@ -1,160 +1,221 @@
-# 🤖 RAG Chatbot API System
+# 🤖 RAG Chatbot — Vector RAG vs. GraphRAG
 
-## 🧭 Overview
+A research prototype comparing **two retrieval architectures** for grounded question answering:
+classic **vector RAG** (Azure AI Search) and **GraphRAG** (Neo4j + vector index),
+served behind one FastAPI application.
 
-This project is a **prototype backend system** built with **FastAPI** or **Flask**, designed for **natural language processing (NLP)** tasks such as **news analysis**, **MBTI personality inference**, and **intelligent chatbot interactions**.  
+> **The problem this started from:** keyword search cannot answer
+> *"what happened with NVIDIA in the past three months"* — it matches strings, not meaning,
+> and it has no idea what "past three months" is.
+> Naive vector RAG fixes the first half. It does **not** fix the second half,
+> and it does not tell you where the answer came from.
+> This repo is where I worked out the parts in between.
 
-It integrates **Large Language Models (LLMs)** with **Azure cloud services**, supporting information retrieval, summarization, and response generation.  
-
-> ⚠️ **Disclaimer:**  
-> This software is **not intended for production or commercial use**.  
-> It is a **research and demonstration prototype**, developed to showcase the conceptual and technical differences between **traditional RAG (Retrieval-Augmented Generation)** and **GraphRAG** architectures, as well as their research applications.
-
----
-
-## ✨ Features
-
-- **Flexible Architecture** – Modular design for data processing and interpretation, providing high configurability and readability.  
-- **Text Preprocessing** – Multi-strategy **embedding-based chunking** ensures contextual integrity during text segmentation.  
-- **Intelligent Search** – Integrates **Azure Cognitive Search**, **Neo4j**, and external web search for comprehensive information retrieval and analysis.  
-- **Multi-Model Support** – Configurable backends (OpenAI, Anthropic, or local LLMs) for text generation, embeddings, and more.  
-- **Chunking & Streaming Responses** – Delivers high-quality, context-aware responses with optimized speed through chunk-based retrieval and streaming.  
-- **Advanced Document & Image Parsing** – OCR-enabled framework for analyzing diverse document formats and images beyond plain text.
+> ⚠️ **Disclaimer** — Research and demonstration prototype. Not for production or commercial use.
+> Built to compare traditional RAG and GraphRAG architectures. All datasets included here are
+> public (Kaggle / 16personalities); no proprietary data is present.
 
 ---
 
 ## 🏗️ Architecture
 
-The backend is organized into several key modules:
+```mermaid
+flowchart TB
+    U(["User turn + chat history"]) --> QR
 
-| File | Description |
-|------|--------------|
-| **config.py** | Global configuration file for API keys and general parameters. |
-| **prompt.py** | Prompt templates and feature engineering definitions. |
-| **neo.py** | Automation module for **Neo4j** graph database operations. |
-| **service.py** | Cloud service initialization and parameter configuration. |
-| **llm_initial.py** | Model initialization module for cloud-based and local LLMs. |
-| **datapreprocessing.py** | Data processing and conversion into database-compatible formats. |
-| **processing.py** | Pipeline utility framework for crawlers and data format conversions. |
-| **pipline.py** | Flask/FastAPI application containing research endpoints. |
-| **Chunking-Text-Splitting.py** | Example script for semantic text chunking. |
-| **yolo_clip_crop.py** | Small AI project utilizing **OpenCV** and **YOLO** for intelligent image cropping. |
-| **index.html** | Simple front-end interface |
+    subgraph PRE["Query understanding"]
+        direction TB
+        QR["Query rewriting<br/><i>multi-turn → standalone query</i>"]
+        QR --> TN["Temporal normalization<br/><i>'past 3 months' → from: / to:</i>"]
+    end
+
+    TN --> R{Route}
+
+    subgraph VEC["Path A — Vector RAG"]
+        direction TB
+        AS["Azure AI Search<br/><i>top-50, score gate ≥ 2.1</i>"]
+        AS --> JG["LLM relevance gate<br/><i>subject ↔ body coherence</i>"]
+        JG --> WS["Web fallback<br/><i>top-2, domain blacklist</i>"]
+    end
+
+    subgraph GRAPH["Path B — GraphRAG"]
+        direction TB
+        NEO["Neo4j<br/><i>Cypher + db.index.vector.queryNodes</i>"]
+        NEO --> HY["Entity + vector hybrid<br/><i>structured relations</i>"]
+    end
+
+    R -->|news QA| VEC
+    R -->|persona / relational| GRAPH
+
+    VEC --> GEN
+    GRAPH --> GEN
+
+    subgraph OUT["Generation"]
+        direction TB
+        GEN["LLM streaming<br/><i>Azure OpenAI · Bedrock Claude · local</i>"]
+        GEN --> POST["Post-processing<br/><i>OpenCC s2t · citation tags</i>"]
+    end
+
+    POST --> A(["Answer + @news_key citations"])
+```
+
+---
+
+## 🔍 What is actually interesting here
+
+Most RAG demos stop at *embed → search → stuff into prompt*. The parts that took the real work:
+
+### 1. Temporal normalization is a separate stage
+`"台積電上個月營收"` has to become `"台積電營收 from: 2024-06-01, to: 2024-06-30"`
+**before** retrieval, otherwise the filter cannot be applied and the model silently answers
+with whatever it found. Relative expressions (`last week`, `past 4 months`, `2023 Q4`,
+`去年九月`) are resolved against the current date in a dedicated prompt stage, and left
+untouched when the query has no temporal component at all — the "do nothing" case is the
+one that breaks most naive implementations.
+
+### 2. Retrieval quality gating, not just top-k
+Retrieved documents pass a score threshold (`threshold_score = 2.1`) and then an **LLM
+relevance judge** that checks whether a document's `body` actually delivers on its
+`subject`. Documents that are on-topic by embedding distance but substantively empty get
+dropped. When nothing survives, the pipeline falls back to live web retrieval
+(top-2 results, with a domain blacklist) rather than letting the model improvise.
+
+### 3. Citations are enforced at the format level
+Answers terminate with `@[news_key1][news_key2]`, appended once at the very end rather than
+per paragraph. This makes the grounding *checkable* — you can trace any claim back to a
+source document ID instead of trusting the model.
+
+### 4. Two retrieval topologies, one API
+Vector search answers *"what does the corpus say about X"*.
+It is weak at *"what connects A and B"* — that is a graph traversal, not a distance metric.
+The MBTI/persona path uses Neo4j with a hybrid of Cypher entity lookup and
+`db.index.vector.queryNodes`, and returns structured relations that flat chunk retrieval
+loses. Having both behind one interface is what makes the comparison honest.
+
+### 5. Model-agnostic generation layer
+Azure OpenAI, AWS Bedrock (Claude), and local HuggingFace models sit behind one interface
+with streaming support. Output passes through OpenCC `s2t` conversion — simplified-Chinese
+leakage is a real and persistent failure mode when serving Traditional Chinese users.
+
+---
+
+## 📁 Module map
+
+| File | Responsibility |
+|------|----------------|
+| `pipline.py` | FastAPI app — `/chat` (news QA), `/crawl` (web fallback), `/graph` (GraphRAG) |
+| `prompt.py` | All prompt templates: query rewriting, temporal normalization, grounded answering, relevance judging |
+| `service.py` | Azure service layer — AI Search client, index lifecycle, Blob storage |
+| `llm_initial.py` | Multi-backend model interface — Azure OpenAI / Bedrock / local, streaming + chunked |
+| `neo.py` | Neo4j operations — ingest, CRUD, hybrid `query_neo4j`, raw Cypher |
+| `processing.py` | Utilities — web crawling, date math, format conversion, full/half-width normalization |
+| `datapreprocessing.py` | Corpus preparation into index-ready records |
+| `Chunking-Text-Splitting.py` | Semantic chunking strategies |
+| `yolo_clip_crop.py` | Side project — YOLO + CLIP subject-aware image cropping |
+| `config.py` | Configuration and credentials (all values blank by default) |
+| `index.html` | Minimal front-end for manual testing |
+
+---
+
+## ⚠️ Known limitations
+
+Stated plainly, because a prototype that hides its edges is not useful to read:
+
+- **No automated evaluation harness.** Retrieval quality was assessed by inspection, not by
+  a scored test set. Building that properly is the subject of a
+  [separate project](https://github.com/JiangAllen/patent-pipeline-demo).
+- **Temporal normalization is prompt-based**, not a parser. It fails on genuinely ambiguous
+  phrasing and cannot be unit-tested the way a grammar could.
+- **The LLM relevance judge is unvalidated** against human agreement. I later found, in
+  another project, that local judges can be 100% format-stable while agreeing with human
+  labels 0% of the time — so treat this gate as a heuristic, not a measurement.
+- Config is a flat module rather than validated settings; fine for research, wrong for production.
 
 ---
 
 ## ⚡ Quick Start
 
-### 🧩 Prerequisites
+### Prerequisites
 - Python **3.10+**
-- API keys for your selected LLM provider and services
-- Authentication credentials for **Neo4j**
-- Python IDE (optional but recommended)
+- Credentials for your chosen LLM provider, Azure AI Search, and Neo4j
 
----
+### Setup
 
-### 🐍 Manual Setup
-
-####  1. Clone the repository
 ```bash
-git clone <repository-url>
-cd <your-project>
-```
+git clone https://github.com/JiangAllen/rag-chatbot.git
+cd rag-chatbot
 
-####  2. Create a virtual environment
-```
-python3 -m venv venv
-venv\Scripts\activate      # Windows
-source venv/bin/activate   # Linux/macOS
-```
+python -m venv venv
+venv\Scripts\activate        # Windows
+source venv/bin/activate     # Linux/macOS
 
-#### 3. Install dependencies
-```
 pip install -r requirements.txt
 ```
 
-#### 4. Copy the example environment file and configure it
-```
-cp env.example .env
-```
+Fill in `config.py` with your endpoints and keys, then:
 
-####  5. Set up API keys and run the server
-```
-echo "your-api-key"
+```bash
 python pipline.py
 ```
 
-👉 The server will be available at http://localhost:8888
+Server runs at `http://localhost:8888`.
 
-## 🐳 Docker Simple Deployment
+### Docker
 
-### 1. Clone the Repository
 ```bash
-git clone <repository-url>
-cd <your-project>
+docker build -t rag-chatbot .
+docker run -d -p 8000:8000 rag-chatbot
 ```
 
-### 2. Verify Docker Installation
-Make sure Docker is installed on your system and that the Docker service is running.
+---
 
-### 3. Build the Docker Image
-From the project root directory, run:
-```
-docker build -t your-project .
-```
+## ⚙️ API
 
-### 4. Run the Docker Container
-```
-docker run -d -p 8000:8000 your-project
-```
+### `POST /chat` — grounded news QA
 
-### 5. Access the Application
-Once the container is running, open your browser and visit:
-👉 http://localhost:8000
-
-## ⚙️ API Endpoints
-### POST /api/chat — News Text Analysis & QA
-```
+```json
 {
-    "history": [
-        {
-            "user": "",
-            "bot": ""
-        },
-        {
-            "user": ""
-        }
-    ]
+  "history": [
+    { "user": "台積電上個月營收如何", "bot": "..." },
+    { "user": "那英特爾呢" }
+  ]
 }
 ```
-- user: User question
-- bot: AI response
 
-### POST /api/graph — MBTI Analysis & QA
-```
+Follow-up turns are resolved against history before retrieval —
+`"那英特爾呢"` becomes a standalone, date-scoped query.
+
+### `POST /graph` — GraphRAG persona QA
+
+```json
 {
-    "history": [
-        {
-            "user": "",
-            "hr": true
-        }
-    ]
+  "history": [
+    { "user": "INFJ 適合什麼職涯方向", "hr": true }
+  ]
 }
 ```
-- user: User question
-- hr: Default is true
+
+### `POST /crawl` — live web retrieval
+
+Used as the fallback path when corpus retrieval returns nothing above threshold.
+
+---
 
 ## 🧩 Troubleshooting
-### Common Issues
-- API Key Error: Ensure that the API key file exists and contains a valid key.
-- CORS Error: Check your FRONTEND_URL configuration.
-- Service Endpoint Error: Verify the model configuration in service.py.
 
-## 📄 License
-### This software is provided for research and demonstration purposes only. Do not use this code in production environments.
+| Symptom | Cause |
+|---|---|
+| Auth errors on startup | `config.py` values are blank by default — fill them in |
+| Empty answers on dated queries | Index has no `datepublish` field, so the time filter matches nothing |
+| Simplified Chinese in output | OpenCC conversion is applied post-generation; check it is reachable on your path |
+| Neo4j connection refused | `NEO4J_URI` / `NEO4J_AUTH` unset, or the vector index has not been created |
 
-## 💬 Support
-If you encounter issues or have questions:
-- Create an issue in the repository
-- Review the configuration settings
-- Contact me at: wwlwyovwkn83999@gmail.com
+---
+
+## 📚 Related work
+
+- **[patent-pipeline-demo](https://github.com/JiangAllen/patent-pipeline-demo)** — where the
+  evaluation problem this repo left open gets solved properly: three-layer evaluation,
+  QLoRA fine-tuning, and a falsified LLM-as-judge experiment kept as a negative result.
+- **[aws-ragchatbot](https://github.com/JiangAllen/aws-ragchatbot)** — the same retrieval
+  problem rebuilt on AWS (Bedrock + OpenSearch Serverless), for a two-cloud comparison.

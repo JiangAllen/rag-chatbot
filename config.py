@@ -13,6 +13,11 @@ llama_model = ""
 phi_model = ""
 diffbot = ""
 blacklist_domains = []
+# 來源文章 URL 模板：依你的內容來源填入。留空則只回傳 news_key，不組連結。
+source_url_column = ""        # 專欄文章，.format(id)
+source_url_news = ""          # 一般新聞，.format(id)
+source_url_report = ""        # 研究報告，.format(v)
+source_url_report_slide = ""  # 報告投影片，.format(v, seq)
 poppler_bin = r""
 tesseract_path = r""
 pdf_path = ""

@@ -17,7 +17,7 @@ import re
 class InputData(BaseModel):
     history: List[Dict[str, Any]]
 
-def run_digitimes(history: Sequence[dict[str, str]]):
+def run_news(history: Sequence[dict[str, str]]):
     azure = azure_service()
     history = [{**item, "user": full_to_half(item["user"]), "bot": full_to_half(item["bot"])} if "bot" in item else {**item, "user": full_to_half(item["user"])} for item in history]
 
@@ -176,7 +176,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 @app.post("/chat")
 async def chatbot(input: InputData):
-    source, result = run_digitimes(input.history)
+    source, result = run_news(input.history)
     return {"response": result, "source": source}
 
 @app.post("/crawl")

@@ -213,17 +213,17 @@ def generate_subject(k, file_key_words):
         if "col" in k["news_key"][i]:
             col_key = k["news_key"][i].split("-")[0]
             col_key = col_key.split("_")[1]
-            subject.append({"news_key": col_key, "filename": "https://www.digitimes.com.tw/col/article.asp?id={}".format(col_key), "title": k["subject"][i],"type": k["sourcetype"][i]})
+            subject.append({"news_key": col_key, "filename": source_url_column.format(col_key) if source_url_column else col_key, "title": k["subject"][i],"type": k["sourcetype"][i]})
             del col_key
         elif "external" in k["news_key"][i]:
             subject.append({"news_key": k["news_key"][i].split("-")[0], "filename": k["reporter"][i], "title": k["subject"][i],"type": "external"})
         elif k["news_key"][i].count("-") == 1 and not any(j in k["news_key"][i] for j in file_key_words):
-            subject.append({"news_key": k["news_key"][i].split("-")[0], "filename": "https://www.digitimes.com.tw/tech/dt/n/shwnws.asp?id={}".format(k["news_key"][i].split("-")[0]), "title": k["subject"][i],"type": k["sourcetype"][i]})
+            subject.append({"news_key": k["news_key"][i].split("-")[0], "filename": source_url_news.format(k["news_key"][i].split("-")[0]) if source_url_news else k["news_key"][i].split("-")[0], "title": k["subject"][i],"type": k["sourcetype"][i]})
         elif k["news_key"][i].count("-") > 1 and not any(j in k["news_key"][i] for j in file_key_words):
             if k["news_key"][i].count("-") == 4:
-                subject.append({"news_key": "-".join(k["news_key"][i].split("-")[:-3]), "filename": "https://www.digitimes.com.tw/tech/rpt/rpt_slideshow_2020.asp?v={}&seq={}".format("-".join(k["news_key"][i].split("-")[:-3]), k["news_key"][i].split("-")[-2]), "title": k["subject"][i]+"#"+k["news_key"][i].split("-")[-2],"type": k["sourcetype"][i]})
+                subject.append({"news_key": "-".join(k["news_key"][i].split("-")[:-3]), "filename": source_url_report_slide.format("-".join(k["news_key"][i].split("-")[:-3]), k["news_key"][i].split("-")[-2]) if source_url_report_slide else "-".join(k["news_key"][i].split("-")[:-3]), "title": k["subject"][i]+"#"+k["news_key"][i].split("-")[-2],"type": k["sourcetype"][i]})
             else:
-                subject.append({"news_key": "-".join(k["news_key"][i].split("-")[:-1]), "filename": "https://www.digitimes.com.tw/tech/rpt/rpt_show.asp?v={}".format("-".join(k["news_key"][i].split("-")[:-1])), "title": k["subject"][i],"type": k["sourcetype"][i]})
+                subject.append({"news_key": "-".join(k["news_key"][i].split("-")[:-1]), "filename": source_url_report.format("-".join(k["news_key"][i].split("-")[:-1])) if source_url_report else "-".join(k["news_key"][i].split("-")[:-1]), "title": k["subject"][i],"type": k["sourcetype"][i]})
         else:
             pass
     subject = pd.DataFrame(subject)
